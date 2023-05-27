@@ -325,6 +325,15 @@ def align_adapter(args):
             umi="N" * args.umi_length,
             tso="TTTCTTATATGGG",
         )
+    elif args.kit == "multiomeatac":
+        # Compile the actual probe sequence of
+        # <adapter1_suffix>NNN...NNN<CGCGTCTGTCGTCGGCAGCGTC>
+        probe_seq = "{a1}{bc}{umi}{tn5}".format(
+            a1=adapter1_probe_seq,
+            bc="N" * args.barcode_length,
+            umi="N" * args.umi_length,
+            tn5="CGCGTCTGTCGTCGGCAGCGTC",
+        )
     else:
         raise Exception("Invalid kit name! Specify either 3prime or 5prime.")
 
