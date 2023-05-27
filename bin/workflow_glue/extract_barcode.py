@@ -331,8 +331,8 @@ def align_adapter(args):
         probe_seq = "{a1}{bc}{umi}{tn5}".format(
             a1=adapter1_probe_seq,
             bc="N" * args.barcode_length,
-            umi="N" * args.umi_length,
-            tn5="CGCGTCTGTCGTCGGCAGCGTC",
+            umi="CGCGTCTGTCGT",
+            tn5="CGGCAGCGTC",
         )
     else:
         raise Exception("Invalid kit name! Specify either 3prime or 5prime.")
