@@ -307,7 +307,7 @@ def align_adapter(args):
     # Use only the specified suffix length of adapter1
     adapter1_probe_seq = args.adapter1_seq[-args.adapter1_suff_length:]
 
-    if args.kit in ("3prime", "multiome"):
+    if args.kit in ("3prime", "multiome", "multiomeatac"):
         # Compile the actual probe sequence of
         # <adapter1_suffix>NNN...NNN<TTTTT....>
         probe_seq = "{a1}{bc}{umi}{pt}".format(
