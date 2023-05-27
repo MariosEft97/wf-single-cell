@@ -15,6 +15,6 @@ kit_adapters = {
     },
     'multiomeatac': {
         'adapter1': 'CGGCGACCACCGAGATCTACAC',
-        'adapter2': 'TAGAGCATACGGCAGAAGACGAAC'
+        'adapter2': 'TACACATCTCCGAGCCCACGAGAC'
     }
 }
