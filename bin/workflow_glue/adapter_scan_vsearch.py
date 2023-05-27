@@ -68,7 +68,7 @@ def argparser():
         determines which adapter sequences to search for in the reads \
         [3prime]",
         default="3prime",
-        choices=['3prime', '5prime', 'multiome']
+        choices=['3prime', '5prime', 'multiome', 'multiomeatac']
     )
 
     parser.add_argument(
