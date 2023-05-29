@@ -348,7 +348,7 @@ workflow {
                     long_list = "737K-arc-v1.txt.gz"
                     break
                 case 'multiomeatac':
-                    long_list = "737K-arc-v1.txt.gz"
+                    long_list = "737K-arc-v1-atac.txt.gz"
                     break
                 default:
                     throw new Exception("Encountered an unexpected kit_name in samples.csv")
