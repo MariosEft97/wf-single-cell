@@ -19,11 +19,9 @@ process get_contigs {
 }
 
 process extract_barcodes{
-    /*
-    Build minimap index from reference genome
-    */
     label "singlecell"
     cpus 2
+    memory "1.5 GB"
     input:
         tuple path("sort.bam"),
               path("sort.bam.bai"),
@@ -32,7 +30,6 @@ process extract_barcodes{
         path "bc_longlist_dir"
 
     output:
-        // TODO: Do not write bams. Write mapping of read_id to barcode
         tuple val(meta.sample_id), 
               path("*.bc_extract.sorted.tsv"),
               val(chrom),
@@ -80,6 +77,7 @@ process generate_whitelist{
 process assign_barcodes{
     label "singlecell"
     cpus 1
+    memory 1.5.GB
     input:
          tuple val(sample_id),
                path("whitelist.tsv"),
@@ -101,6 +99,7 @@ process assign_barcodes{
         --max_ed $params.barcode_max_ed \
         --min_ed_diff $params.barcode_min_ed_diff \
         --extract_barcode_tags extract_barcodes.tsv \
+        --chunksize $params.process_chunk_size \
         --whitelist whitelist.tsv
     """
 }
@@ -119,11 +118,15 @@ process split_gtf_by_chroms {
 
 process cluster_umis {
     label "singlecell"
+    cpus 1
+    // Benchmarking showed that memory usage was ~ 15x the size of read_tags input.
+    // Set a minimum memory requirement of 1.0GB to allow for overhead.
+    memory {1.0.GB.toBytes()  + (read_tags.size() * 20) }
     input:
         tuple val(sample_id),
               val(chr),
               path("chrom_feature_assigns.tsv"),
-              path("read_tags.tsv")
+              path(read_tags, stageAs: "read_tags.tsv")
     output:
         tuple val(sample_id),
               val(chr),
@@ -135,7 +138,6 @@ process cluster_umis {
     """
     workflow-glue cluster_umis \
         --chrom ${chr} \
-        --cell_gene_max_reads $params.umi_cell_gene_max_reads \
         --feature_assigns chrom_feature_assigns.tsv \
         --read_tags read_tags.tsv \
         --output_read_tags "${sample_id}_${chr}.read_tags.tsv" \
@@ -149,6 +151,7 @@ process tag_bams {
     input:
         tuple val(sample_id),
               val(chr),
+              val(kit_name),
               path("align.bam"),
               path("align.bam.bai"),
               path('tags.tsv')
@@ -157,11 +160,15 @@ process tag_bams {
               path("${sample_id}.${chr}.tagged.bam"),
               path("${sample_id}.${chr}.tagged.bam.bai"),
               emit: tagged_bam
+    script:
+    def opt_flip = (kit_name != '5prime') ? "--flip": ""
     """
     workflow-glue tag_bam \
         --in_bam align.bam \
         --tags tags.tsv \
-        --out_bam ${sample_id}.${chr}.tagged.bam
+        --out_bam ${sample_id}.${chr}.tagged.bam \
+        --chrom ${chr} \
+        ${opt_flip}
 
     samtools index ${sample_id}.${chr}.tagged.bam
     """
@@ -173,6 +180,7 @@ process combine_tag_files {
     // a channel that returns tuples. It groups and names according to the
     // first element of the tuple. Hence this process.
     label "singlecell"
+    cpus 1
     input:
         tuple val(sample_id),
               path("tags*.tsv")
@@ -187,6 +195,7 @@ process combine_tag_files {
 process combine_final_tag_files {
     // Combine the final
     label "singlecell"
+    cpus 1
     input:
         tuple val(sample_id),
               path("tags*.tsv")
@@ -200,14 +209,36 @@ process combine_final_tag_files {
 
 process combine_uncorrect_bcs {
     label "singlecell"
+    cpus 1
     input:
         tuple val(sample_id),
               path("uncorrected_bcs*.tsv")
-        output:
-            tuple val(sample_id),
-                  path("${sample_id}.uncorrected_bc_counts.tsv")
+    output:
+        tuple val(sample_id),
+              path("${sample_id}.uncorrected_bc_counts.tsv")
+    shell:
     """
-    cat *.tsv > "${sample_id}.uncorrected_bc_counts.tsv"
+    #!/usr/bin/env python
+    import pandas as pd
+    from pathlib import Path
+
+    # Combine all the uncorrected barcode counts files for all chromsomes.
+    # Sum the counts per barcode to get uncorrected barcode counts for the whole sample.
+    # Write output to a TSV file.
+    cwd = Path()
+    all_files = cwd.glob("*.tsv")
+    dfs = []
+    for fn in all_files:
+        try:
+            dfs.append(pd.read_csv(str(fn), sep='\t', index_col=0, header=None))
+        except pd.errors.EmptyDataError:
+            continue
+    if len(dfs) < 1:
+        raise ValueError('No uncorrected barcode counts')
+    df = pd.concat(dfs).reset_index()
+    df.columns = ['barcode', 'count']
+    df_final = df.groupby('barcode').sum().sort_values('count', ascending=False)
+    df_final.to_csv("${sample_id}.uncorrected_bc_counts.tsv", sep='\t')
     """
 }
 
@@ -236,14 +267,20 @@ process combine_chrom_bams {
 process stringtie {
     label "singlecell"
     cpus Math.max(params.max_threads / 4, 4.0)
+    // Memory usage for this process is usually less than 3GB, but some cases it may go over this.
+    memory = { 3.GB * task.attempt }
+    maxRetries = 3
+    errorStrategy = { task.exitStatus in 137..140 ? 'retry' : 'terminate' }
     input:
         path 'ref_genome.fa'
         path 'ref_genome.fa.fai'
         tuple val(sample_id),
               path("align.bam"),
               path("align.bam.bai"),
+              val(kit_name),
               val(chr),
               path("chr.gtf")
+
     output:
         tuple val(sample_id),
               val(chr),
@@ -252,13 +289,23 @@ process stringtie {
               path("stringtie.gff"),
               path("reads.fastq"),
               emit: read_tr_map
+    script:
+    if (kit_name=="5prime")
     """
-    # Build transcriptome. 
+    samtools view -h align.bam ${chr}  \
+         | tee >(stringtie -L ${params.stringtie_opts} -p ${task.cpus} -G chr.gtf -l stringtie \
+             -o stringtie.gff - ) \
+         | samtools fastq > reads.fastq    
+    # Get transcriptome sequence
+    gffread -g ref_genome.fa -w transcriptome.fa stringtie.gff
+    """
+    else
+    """
+    # Data from 3prime and multiome kits must be flipped to the transcript strand before building transcriptome.
     workflow-glue process_bam_for_stringtie align.bam ${chr}  \
         | tee >(stringtie -L ${params.stringtie_opts} -p ${task.cpus} -G chr.gtf -l stringtie \
             -o stringtie.gff - ) \
         | samtools fastq > reads.fastq
-
     # Get transcriptome sequence
     gffread -g ref_genome.fa -w transcriptome.fa stringtie.gff
     """
@@ -267,48 +314,58 @@ process stringtie {
 
 process align_to_transcriptome {
     label "singlecell"
-    cpus Math.max(params.max_threads / 2, 4.0)
+    cpus Math.max(params.max_threads / 10, 4.0)
+    // The average memory required for this step is usually ~ 4-5GB. However peak RSS scales with reference size but
+    // not all that predicatably. So until a better memory heuristic is found, employ a error strategy where
+    // the default 5GB is increased by 5GB upon each error, up to a maximum value of 25GB
+    memory = { 5.GB  * task.attempt }
+    maxRetries = 5
+    errorStrategy = { task.exitStatus in 137..140 ? 'retry' : 'terminate' }
     input:
         tuple val(sample_id),
               val(chr),
               path('transcriptome.fa'),
               path('chr.gtf'),
               path('stringtie.gff'),
-              path("reads.fastq")
+              path("reads.fq")
     output:
         tuple val(sample_id),
               val(chr),
               path("chr.gtf"),
               path("tr_align.bam"),
-              path("tr_align.bam.bai"),
               path('stringtie.gff'),
               emit: read_tr_map
+    script:
+    // Provide at least 2 cores to mm2
+    def mm2_threads = Math.max(task.cpus - 3, 2)
+    // Remove the mm2 + samtools view cores and give the rest to sorting
+    def st_threads = Math.max(task.cpus - 1 - mm2_threads, 1)
     """
     minimap2 -ax map-ont \
         --end-bonus 10 \
         -p 0.9 \
         -N 3 \
-        -t $task.cpus \
+        -t $mm2_threads \
         transcriptome.fa \
-        reads.fastq \
-        | samtools view -h -b -F 2052 - \
-        | samtools sort -@ 2 --no-PG - > tr_align.bam
-    samtools index tr_align.bam
+        reads.fq \
+        | samtools view -h -@ 1 -b -F 2052 - \
+        | samtools sort -n -@ $st_threads --no-PG - > tr_align.bam
     """
 }
 
 
 process assign_features {
     label "singlecell"
+    // Benchmarking showed that memory usage scales with tags file size.
+    memory { 1.0.GB.toBytes() + (tags.size() * 2 ) }
     cpus 1
     input:
         tuple val(sample_id),
               val(chr),
               path("chr.gtf"),
               path("tr_align.bam"),
-              path("tr_align.bam.bai"),
               path('stringtie.gff'),
-              path('tags.tsv')
+              path(tags, stageAs: 'tags.tsv')
     output:
         tuple val(sample_id),
               val(chr),
@@ -323,6 +380,7 @@ process assign_features {
         --gffcompare_tmap gffcompare.stringtie.gff.tmap \
         --gtf chr.gtf \
         --tags tags.tsv \
+        --chunksize $params.process_chunk_size \
         --output "${sample_id}.${chr}.feature_assigns.tsv" \
         --min_mapq ${params.gene_assigns_minqv}
     """
@@ -339,9 +397,10 @@ process umi_gene_saturation {
               path("*saturation_curves.png"),
               emit: saturation_curve
     """
+    export POLARS_MAX_THREADS=$task.cpus
+
     workflow-glue calc_saturation \
         --output "${sample_id}.saturation_curves.png" \
-        --threads ${task.cpus} \
         --read_tags read_tags.tsv
     """
 }
@@ -466,7 +525,10 @@ workflow process_bams {
                 .map{it -> it.flatten()[1, 2, 4, 6]},
             bc_longlist_dir)
 
-        un_corr_bcs = combine_uncorrect_bcs(extract_barcodes.out.barcode_counts)
+        un_corr_bcs = combine_uncorrect_bcs(
+            extract_barcodes.out.barcode_counts
+            .groupTuple())
+
 
         generate_whitelist(
             extract_barcodes.out.barcode_counts
@@ -483,7 +545,9 @@ workflow process_bams {
         stringtie(
             ref_genome_fasta,
             ref_genome_idx,
-            bam.combine(chr_gtf))
+            bam.join(meta).map { sample_id, bam, bai, meta -> [sample_id, bam, bai, meta['kit_name']]}
+            .combine(chr_gtf))
+
         
         align_to_transcriptome(stringtie.out.read_tr_map)
 
@@ -497,9 +561,10 @@ workflow process_bams {
             .join(assign_barcodes.out.tags, by: [0, 1]))
 
         tag_bams(
-            bam.cross(
-                cluster_umis.out.read_tags
-            ).map {it ->it.flatten()[0, 4, 1, 2, 5]})
+             bam.join(meta).map { sample_id, bam, bai, meta -> [sample_id, bam, bai, meta['kit_name']]}
+             // cross by sample_id on the output of cluster_umis to return
+             // [sample_id, chr, kit_name, bam, bai, tags.tsv]
+            .cross(cluster_umis.out.read_tags).map {it -> it.flatten()[0, 5, 3, 1, 2, 6]})
 
         read_tags = combine_tag_files(
             cluster_umis.out.read_tags
@@ -554,7 +619,7 @@ workflow process_bams {
 
     emit:
         results = umaps
-            .mix(umi_gene_saturation.out.saturation_curve)
+            .join(umi_gene_saturation.out.saturation_curve)
             .join(final_read_tags)
             .join(construct_expression_matrix.out)
             .join(proc_expresion_out)
