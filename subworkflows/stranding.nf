@@ -1,4 +1,6 @@
 process call_adapter_scan {
+    // Locate adapter sequences using adapter_scan_vsearch.py script
+
     label "singlecell"
     cpus 1
     input:
@@ -88,7 +90,7 @@ workflow stranding {
     main:      
         chunks = meta
             .cross(read_chunks.flatMap({it ->
-            // Rejig the outputs to be [sample_id, fatq_chunk]
+            // Rejig the outputs to be [sample_id, fastq_chunk]
             // Then merge in kit info
             if (it[1].getClass() != java.util.ArrayList){
                 // If only one path, `it` will be [sample_id, path]

@@ -373,7 +373,7 @@ def write_stranded_fastq(fastq, read_info, output_fastq):
         "adapter2_r": "adapter2_f"
     }
 
-    # Iterate through FASTQ reads and re-write them with proper stranding based
+    # Iterate through FASTQ reads and re-write them with proper stranding based on
     # the results of the VSEARCH alignments.
     with pysam.FastxFile(fastq) as f_in:
         # with open(tmp_stranded_fastq, "w") as f_out:

@@ -1,6 +1,14 @@
 import java.util.ArrayList;
 
 process get_contigs {
+    // samtools idxstats retrieves sequence statistics
+    // gawk is the GNU awk command (text processing tool)
+    // -v var= option allows to set the value of variable var so it can be used within the awk script
+    // /^[^*]/ this regular expression pattern matches lines that do not start with asterisk (*)
+    // {print var,\$1} for lines that match the pattern the value of var variable followed by the the first field (the contig name) from the input are printed
+    // NF filters out lines that have no fields (empty lines or lines with only whitespace)
+    // pipeline output is written to ${sample_id}_contigs file
+    
     label "singlecell"
     cpus 1
     input:

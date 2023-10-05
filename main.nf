@@ -14,6 +14,7 @@ import groovy.json.JsonBuilder
 import nextflow.util.BlankSeparatedList;
 nextflow.enable.dsl = 2
 
+// nextflow include directive used to include reusable code from external nextflow scripts
 include { fastq_ingress } from './lib/fastqingress'
 include { stranding } from './subworkflows/stranding'
 include { align } from './subworkflows/align'
@@ -21,8 +22,8 @@ include { process_bams } from './subworkflows/process_bams'
 
 
 process summariseCatChunkReads {
-    // concatenate fastq and fastq.gz in a dir. 
-    // Split into p parts where p is num threads
+    // fastcat concatenates fastq and fastq.gz in a dir and creates a summary per sequence read
+    // seqkit2 split2 splits the fastq dir into p parts where p is num threads
 
     label "singlecell"
     cpus 2
@@ -44,6 +45,8 @@ process summariseCatChunkReads {
 }
 
 process getVersions {
+    // Versions of software used written in versions.txt file
+    
     label "singlecell"
     cpus 1
     output:
@@ -66,6 +69,10 @@ process getVersions {
 
 
 process getParams {
+    // The Nextflow params object containing parameters and configuration information for the workflow
+    // is converted into a JSON-formatted string that is stored in the paramsJSON variable
+    // The contents of paramsJSON variable are written into a file named params.json
+
     label "singlecell"
     cpus 1
     output:
@@ -79,6 +86,8 @@ process getParams {
 }
 
 process makeReport {
+    // Create a report in HTML format using report.py script
+
     label "singlecell"
     input:
         path 'versions'
@@ -115,7 +124,7 @@ process makeReport {
 // decoupling the publish from the process steps.
 process output {
     label "singlecell"
-    // // publish inputs to output directory
+    // publish inputs to output directory
     publishDir "${params.out_dir}", mode: 'copy', pattern: "*.{bam,bai}",
         saveAs: { filename -> "${sample_id}/bams/$filename" }
     publishDir "${params.out_dir}", mode: 'copy', pattern: "*umap*.{tsv,png}",

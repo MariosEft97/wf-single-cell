@@ -1,4 +1,6 @@
 process call_paftools {
+    // Covert gtf/gff3 files to bed12
+
     label "singlecell"
     cpus 1
     input:
@@ -11,6 +13,8 @@ process call_paftools {
 }
 
 process get_chrom_sizes{
+    // cut -f1,2 extracts the 1st and 2nd columns of the genome index file (.fai)
+    // sort -V sorts using version sort (-V) that is aware of numbers within the text (i.e. chromosome names)
     label "singlecell"
     cpus 1
     input:
@@ -23,6 +27,22 @@ process get_chrom_sizes{
 }
 
 process align_to_ref {
+    // Map long-read sequences to reference genome using minimap2
+    // -ax splice is used to aling RNA-seq data that contain spliced elements
+    // -uf specifies that input file must be in FASTQ format and output in SAM format
+    // --secondary=no indicates that no secondary alignments should be generated
+    // --MD option used to include the MD tags (mismatches and deletions) in SAM output
+    // -t specifies the number of CPU cores to use for the alignment
+    // --junc-bed provides a BED file to guide the spliced alignments process
+    // $params.resources_mm2_flags variable includes additional flags or parameters that are passed to minimap2
+    // samtools view -b convert the SAM files into BAM format
+    // --no-PG tag indicates not to add the @PG line to the header of the BAM file
+    // -t ref_chrom_sizes specifies a reference chromosome sizes file that is used to set the header information for the BAM file
+    // - input comes from standard input (piped fro previous commands)
+    // samtools sort sorts the BAM file by genomic coordinates
+    // -@ specifies the number of CPU threads should be used for sorting
+    // samtools index creates an index file for the sorted BAM file
+    
     label "singlecell"
     cpus params.resources_mm2_max_threads
     input:
