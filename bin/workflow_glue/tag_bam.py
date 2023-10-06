@@ -58,21 +58,21 @@ def add_tags(tags_file, in_bam, out_bam, chrom, rev):
                 except KeyError:
                     continue  # No barcode/umi for this read
                 # uncorrectred cell barcode
-                align.set_tag('CR', row['CR'], value_type="Z")
-                # Correctred cell barcode
-                align.set_tag('CB', row['CB'], value_type="Z")
+                align.set_tag('CR', str(row['CR']), value_type="Z")
+                # Corrected cell barcode
+                align.set_tag('CB', str(row['CB']), value_type="Z")
                 # barcode qscores
-                align.set_tag('CY', row['CY'], value_type="Z")
+                align.set_tag('CY', str(row['CY']), value_type="Z")
                 # Uncorrected UMI
-                align.set_tag('UR', row['UR'], value_type="Z")
+                align.set_tag('UR', str(row['UR']), value_type="Z")
                 # UMI quality score
-                align.set_tag('UY', row['UY'], value_type="Z")
+                align.set_tag('UY', str(row['UY']), value_type="Z")
                 # Corrected UMI = UB:Z
-                align.set_tag("UB", row['UB'], value_type="Z")
+                align.set_tag("UB", str(row['UB']), value_type="Z")
                 # Annotated gene name = GN:Z
-                align.set_tag("GN", row['gene'], value_type="Z")
+                align.set_tag("GN", str(row['gene']), value_type="Z")
                 # Annotated transcript name = TR:Z
-                align.set_tag("TR", row['transcript'], value_type="Z")
+                align.set_tag("TR", str(row['transcript']), value_type="Z")
 
                 # Up to this point in the workflow the alignments are in reverse
                 # orientation in relation to the mRNA for 31 and multiome kits.
