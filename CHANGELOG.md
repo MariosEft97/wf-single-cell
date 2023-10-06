@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [v0.2.7]
+### Fixed
+- Mitochondrial expression file not being copied to output directory
+- Incorrect setting of polars maximum threads
+
+### Added
+- Allow `geneName` attribute in GTF annotation file
+
+## [v0.2.6]
+### Fixed
+- Alignments generated from 5' 10x kit are now in the correct orientation.
+
+## [v0.2.5]
+### Added
+- Memory directives to some processes to better manage system resources 
+
+### Changed
+- Bumped minimum required Nextflow version to 22.10.8
+- GitHub issue templates
+- Add chunking of input data to some processes to reduce memory usage
+
+### Fixed
+- Output BAM files with alignments from incorrect chromosomes
+- Incorrect uncorrected_barcodes.tsv output
+
 ## [v0.2.4]
 ### Added
 - Configuration for running demo data in AWS
@@ -84,7 +110,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - single_cell_sample_sheet is optional and kit options can be supplied as workflow parameters.
 
 ## [v0.1.3]
-## Changed
+### Changed
 - Better handling of sample_id conflicts in single_cell_sampkle_sheet and fastgingress.
 - single_cell_sample_sheet is optional.
 - Minor IO performance enhancements.

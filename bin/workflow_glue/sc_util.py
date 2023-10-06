@@ -12,5 +12,9 @@ kit_adapters = {
     '5prime': {
         'adapter1': 'CTACACGACGCTCTTCCGATCT',
         'adapter2': 'GTACTCTGCGTTGATACCACTGCTT'
+    },
+    'multiomeatac': {
+        'adapter1': 'CGGCGACCACCGAGATCTACAC',
+        'adapter2': 'TACACATCTCCGAGCCCACGAGAC'
     }
 }

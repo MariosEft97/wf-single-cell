@@ -26,7 +26,7 @@ process summariseCatChunkReads {
     // seqkit2 split2 splits the fastq dir into p parts where p is num threads
 
     label "singlecell"
-    cpus 2
+    cpus 4
     input:
         tuple val(meta),
               path(reads)
@@ -37,10 +37,15 @@ process summariseCatChunkReads {
         tuple val("${meta.alias}"),
               path("chunks/*"),
               emit: fastq_chunks
-    
+    script:
+    // Split the input fastq into chunks for processing by downstream proceses.
+    // If params.adapter_scan_chunk_size is set to 0, partition data into $params.max_threads chunks (with seqkit -p)
+    // Else partition into chunks with params.adapter_scan_chunk_size reads (with seqkit -s)
+    def seqkit_split_opts = (params.adapter_scan_chunk_size == 0) ? "-p $params.max_threads" : "-s $params.adapter_scan_chunk_size"
+
     """
     fastcat -s ${meta.alias} -r ${meta.alias}.stats -x ${reads} | \
-        seqkit split2 -p ${params.max_threads} -O chunks -o ${meta.alias} -e .gz
+        seqkit split2 --threads ${task.cpus} ${seqkit_split_opts} -O chunks -o ${meta.alias} -e .gz
     """
 }
 
@@ -54,7 +59,9 @@ process getVersions {
     script:
     """
     python -c "import pysam; print(f'pysam,{pysam.__version__}')" >> versions.txt
+    python -c "import parasail; print(f'parasail,{parasail.__version__}')" >> versions.txt
     python -c "import pandas; print(f'pandas,{pandas.__version__}')" >> versions.txt
+    python -c "import rapidfuzz; print(f'rapidfuzz,{rapidfuzz.__version__}')" >> versions.txt
     python -c "import sklearn; print(f'scikit-learn,{sklearn.__version__}')" >> versions.txt
     fastcat --version | sed 's/^/fastcat,/' >> versions.txt
     minimap2 --version | sed 's/^/minimap2,/' >> versions.txt
@@ -130,7 +137,7 @@ process output {
     publishDir "${params.out_dir}", mode: 'copy', pattern: "*umap*.{tsv,png}",
         saveAs: { filename -> "${sample_id}/umap/$filename" }
     publishDir "${params.out_dir}", mode: 'copy', 
-        pattern: "*{images,counts,processed,kneeplot,saturation,config,tags,whitelist}*",
+        pattern: "*{images,counts,gene_expression,transcript_expression,kneeplot,saturation,config,tags,whitelist}*",
         saveAs: { filename -> "${sample_id}/$filename" }
 
     input:
@@ -244,7 +251,7 @@ workflow pipeline {
             bc_longlist_dir,
             ref_genome_fasta,
             ref_genome_idx)
-        
+
         prepare_report_data(
             process_bams.out.final_read_tags
             .join(stranding.out.config_stats)
@@ -330,9 +337,19 @@ workflow {
     .join(fastqingress_ids, failOnMismatch:true)
 
     // Merge the kit info and user-supplied meta data on kit name and version
-    sample_info = kit_configs.join(sample_kits, by: [0, 1])
-        .map {it ->
-            meta = it[2] + it[3] // Join the 2 meta maps  
+    sample_info = kit_configs.join(sample_kits, by: [0, 1], remainder: true)
+        // Remove kits that are not selected (sample_meta is null)
+        .filter( {kit_name, kit_version, kit_meta, sample_meta -> sample_meta })
+        // Rsise an error for unsupported kits
+        .map { kit, version, wf_kit_meta, user_sample_meta ->
+                if (!wf_kit_meta) {
+                    error "${kit} is not a supported kit"
+                }else{
+                    return [kit, version, wf_kit_meta, user_sample_meta]
+                }
+        }
+        .map {it->
+            meta = it[2] + it[3] // Join the 2 meta maps
             kit_name = meta['kit_name']
             kit_version = meta['kit_version']
             // Get the appropriate cell barcode longlist based on the kit_name specified for this sample_id.
@@ -356,6 +373,9 @@ workflow {
                 case 'multiome':
                     long_list = "737K-arc-v1.txt.gz"
                     break
+                case 'multiomeatac':
+                    long_list = "737K-arc-v1-atac.txt.gz"
+                    break
                 default:
                     throw new Exception("Encountered an unexpected kit_name in samples.csv")
             }
@@ -364,8 +384,6 @@ workflow {
             [it[3]['sample_id'], meta]}
 
     pipeline(reads, ref_genome_dir, umap_genes, sample_info)
-
-
 
     output(pipeline.out.results.flatMap({it ->
         // Convert [sample_id, file, file, ..] 
